@@ -33,7 +33,11 @@ import tweepy
 import weibo1
 
 import ConfigParser
-import string, os, simplejson, time, urllib, re
+import string, os, time, urllib, re
+try:
+    import json
+except ImportError:
+    import simplejson as json
 
 import utils
 
@@ -56,7 +60,7 @@ def get_sinaweibopy_api(consumer_key, consumer_key_secret, access_token, access_
 # use youdao fanyi api need a key, others is ok.
 def translate_en_zh_cn(key, keyfrom, contents):
     query = {'q':contents}
-    return simplejson.loads(urllib.urlopen("http://fanyi.youdao.com/openapi.do?keyfrom="+keyfrom+"&key="+key+"&type=data&doctype=json&version=1.1&"+urllib.urlencode(query)).read())["translation"][0]
+    return json.loads(urllib.urlopen("http://fanyi.youdao.com/openapi.do?keyfrom="+keyfrom+"&key="+key+"&type=data&doctype=json&version=1.1&"+urllib.urlencode(query)).read())["translation"][0]
 
 def main():
     # since id from twitter
@@ -96,23 +100,22 @@ def main():
                     for i in range(len(mentions)):
                         content = content.replace(mentions[i], "@"+str(i), 1)
                     for i in range(len(tags)):
-                        content = content.replace(tags[i], "!"+str(i), 1)
+                        content = content.replace(tags[i], "["+str(i), 1)
 
                     tweet_prefix = "("+tweet.author.screen_name+"):"
                     content = tweet_prefix + content
 
                     #translation
                     trans = translate_en_zh_cn(youdao_key, youdao_keyfrom, content.encode("utf-8", "ignore"))
-                    #print trans
                     #trim 
                     trans = trans.strip(' \n\t\r')
                     #replace back mentions & tags etc.
                     for i in range(len(mentions)):
                         trans = trans.replace("@"+str(i), mentions[i], 1)
                     for i in range(len(tags)):
-                        trans = trans.replace("!"+str(i), tags[i]+"#", 1)
+                        trans = trans.replace("["+str(i), tags[i]+"#", 1)
                     trans = trans.replace("(", "#", 1).replace(")", "#", 1)
-                    tweet_prefix.replace("(", "#", 1).replace(")", "#", 1)
+                    tweet_prefix = tweet_prefix.replace("(", "#", 1).replace(")", "#", 1)
                     
                     #translate 'RT ' to Chinese
                     trans = trans.replace('RT ', rt_chinese.decode("utf-8"), 1)
@@ -121,14 +124,13 @@ def main():
                     for i in range(len(urls)):
                         trans = trans.replace("_"+str(i), sinaweibopy_api.get.short_url__shorten(url_long=utils.unshortlink(urls[i], 2))[0]["url_short"], 1)
                     
-                    print trans
+                    #print trans
                     #updates tsina & tqq
                     ret = pyqqweibo_api.tweet.add(trans, clientip='127.0.0.1')
                     pyqqweibo_api.tweet.show(ret.id).retweet(tweet_prefix+tweet.text)
                     ret = sinaweibopy_api.post.statuses__update(status=trans)
                     #sinaweibopy_api.post.statuses__update(status=tweet_prefix+tweet.text)
                     #sinaweibopy_api.post.statuses__repost(id=ret['id'], status=tweet_prefix+tweet.text)
-                    break
                 except:
                     continue
             time.sleep(refresh_time)
@@ -137,6 +139,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-#print pyqqweibo_api.tweet.add('pyqq', clientip='127.0.0.1')
-#print sinaweibopy_api.get.statuses__user_timeline()
-#print sinaweibopy_api.post.statuses__update(status=u'sinaweibopy test another 2!')

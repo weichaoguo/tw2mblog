@@ -15,7 +15,9 @@ The goal of this project is to make a robot :
 Requirements
 ------------
 
-- need twitter & microblog(weibo.com, t.qq.com, etc.) api key & acess token in oauth 1.0
+- Python 2.7 required
+- need twitter & some microblog(weibo.com, t.qq.com, etc.) api key & acess token in oauth 1.0
+- need youdao or other translate API key
 
 Links
 -----
