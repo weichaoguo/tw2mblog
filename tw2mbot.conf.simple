@@ -1,8 +1,8 @@
 [general]
 rt_chinese=转发
-refresh_time=600
-since_id=124
-tweets_ot=3
+refresh_time=3600
+collect_limit=300
+update_limit=2
 [youdao]
 keyfrom=KEYFROM
 key=KEY

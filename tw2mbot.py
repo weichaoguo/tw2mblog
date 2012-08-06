@@ -33,7 +33,7 @@ import tweepy
 import weibo1
 
 import ConfigParser
-import string, os, time, urllib, re
+import string, os, time, urllib, re, random
 try:
     import json
 except ImportError:
@@ -135,13 +135,19 @@ def publish(tweet):
     prefix = "#"+followings[tweet.author.screen_name.lower()].decode("utf-8")+"#:"
     trans = prefix + trans
     tweet_text = prefix + tweet_text
-    print tweet_text
-    print trans
+    #print tweet_text
+    #print trans
     #updates tsina & tqq
-    #ret = pyqqweibo_api.tweet.add(trans, clientip='127.0.0.1')
-    #pyqqweibo_api.tweet.show(ret.id).retweet(tweet_text)
-    #ret = sinaweibopy_api.post.statuses__update(status=tweet_text)
-    #sinaweibopy_api.post.statuses__repost(id=ret["id"], status=trans)
+    #interval between updates ...
+    interval = 60
+    ret = pyqqweibo_api.tweet.add(trans, clientip='127.0.0.1')
+    time.sleep(random.randint(interval/2, 2*interval))
+    pyqqweibo_api.tweet.show(ret.id).retweet(tweet_text)
+    
+    ret = sinaweibopy_api.post.statuses__update(status=tweet_text)
+    time.sleep(random.randint(interval/2, 2*interval))
+    ret_id = string.atol(ret["id"]) if type(ret["id"]) == type(u"") else ret["id"]
+    sinaweibopy_api.post.statuses__repost(id=ret_id, status=trans)
 
 def main():
     global tweet_cahce, published
