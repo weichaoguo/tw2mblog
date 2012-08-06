@@ -59,15 +59,53 @@ def translate_en_zh_cn(key, keyfrom, contents):
     query = {'q':contents}
     return json.loads(urllib.urlopen("http://fanyi.youdao.com/openapi.do?keyfrom="+keyfrom+"&key="+key+"&type=data&doctype=json&version=1.1&"+urllib.urlencode(query)).read())["translation"][0]
 
+def load_api():
+    global youdao_key, youdao_keyfrom, tweepy_api, pyqqweibo_api, sinaweibopy_api
+    #load APIs & keys
+    cf = ConfigParser.ConfigParser()
+    cf.read("tw2mbot.conf")
+    #read youdao fanyi api key & keyfrom
+    youdao_key = cf.get("youdao", "key")
+    youdao_keyfrom = cf.get("youdao", "keyfrom")
+    #load APIs
+    tweepy_api = get_tweepy_api(cf.get("twitter", "consumer_key"), cf.get("twitter", "consumer_key_secret"), cf.get("twitter", "access_token"), cf.get("twitter", "access_token_secret")) 
+    pyqqweibo_api = get_pyqqweibo_api(cf.get("tqq", "consumer_key"), cf.get("tqq", "consumer_key_secret"), cf.get("tqq", "access_token"), cf.get("tqq", "access_token_secret")) 
+    sinaweibopy_api = get_sinaweibopy_api(cf.get("tsina", "consumer_key"), cf.get("tsina", "consumer_key_secret"), cf.get("tsina", "access_token"), cf.get("tsina", "access_token_secret")) 
+
+def load_conf():
+    global rt_chinese, update_limit, collect_limit, refresh_time, names, queue_size, followings, tweet_cache, published
+    #load Consts
+    cf = ConfigParser.ConfigParser()
+    cf.read("tw2mbot.conf")
+    # read conf & get apis
+    rt_chinese = cf.get("general", "rt_chinese")
+    #read youdao fanyi api key & keyfrom
+    youdao_key = cf.get("youdao", "key")
+    youdao_keyfrom = cf.get("youdao", "keyfrom")
+    #read limits
+    update_limit = string.atoi(cf.get("general", "update_limit"))
+    collect_limit = string.atoi(cf.get("general", "collect_limit"))
+    #read refresh time in seconds
+    refresh_time = string.atof(cf.get("general", "refresh_time"))
+    #read followings
+    cf.read("followings.list")
+    names = cf.options("followings")
+    queue_size = len(names)
+    followings = {}
+    for name in names:
+        followings[name] = cf.get("followings", name)
+        # cache the newest tweet for every following guys to publish
+        if name not in tweet_cache.keys():
+            tweet_cache[name] = None
+            published[name] = True
+
 def publish(tweet):
-    #print tweet.text
-    content = tweet.text
+    tweet_text = tweet.text
+    content = tweet_text
     #clean & collect links, tags, mentions
-    urls = re.findall("http://\S+", tweet.text)
-    mentions = re.findall("@\S+", tweet.text)
-    tags = re.findall("#[A-Za-z0-9]+", tweet.text)
-    for url in urls:
-        tweet.text = tweet.text.replace(url, "", 1)
+    urls = re.findall("http://\S+", tweet_text)
+    mentions = re.findall("@\S+", tweet_text)
+    tags = re.findall("#[A-Za-z0-9]+", tweet_text)
     for i in range(len(urls)):
         content = content.replace(urls[i], "("+str(i)+")", 1)
     for i in range(len(mentions)):
@@ -89,28 +127,30 @@ def publish(tweet):
     
     #recover t.co short urls then shorten with t.cn
     for i in range(len(urls)):
-        trans = trans.replace("("+str(i)+")", sinaweibopy_api.get.short_url__shorten(url_long=utils.unshortlink(urls[i], 2))[0]["url_short"], 1)
+        tcn_url = sinaweibopy_api.get.short_url__shorten(url_long=utils.unshortlink(urls[i], 2))[0]["url_short"]+" "
+        trans = trans.replace("("+str(i)+")", tcn_url, 1)
+        tweet_text = tweet_text.replace(urls[i], tcn_url, 1)
     
     #add prefix ...
-    trans = "#"+followings[tweet.author.screen_name.lower()].decode("utf-8")+"#:" + trans
-    tweet.text = "#"+tweet.author.screen_name+"#:" + tweet.text
-    #print trans
+    prefix = "#"+followings[tweet.author.screen_name.lower()].decode("utf-8")+"#:"
+    trans = prefix + trans
+    tweet_text = prefix + tweet_text
+    print tweet_text
+    print trans
     #updates tsina & tqq
-    ret = pyqqweibo_api.tweet.add(trans, clientip='127.0.0.1')
-    pyqqweibo_api.tweet.show(ret.id).retweet(tweet.text)
-    sinaweibopy_api.post.statuses__update(status=tweet.text)
-    sinaweibopy_api.post.statuses__update(status=trans)
-    #sinaweibopy_api.post.statuses__repost(id=string.atoi(ret["id"]), status=trans)
+    #ret = pyqqweibo_api.tweet.add(trans, clientip='127.0.0.1')
+    #pyqqweibo_api.tweet.show(ret.id).retweet(tweet_text)
+    #ret = sinaweibopy_api.post.statuses__update(status=tweet_text)
+    #sinaweibopy_api.post.statuses__repost(id=ret["id"], status=trans)
 
 def main():
+    global tweet_cahce, published
+    load_conf()
+    load_api()
     cur_order = 0
     last_order = queue_size - 1
-    # since id from twitter
-    since_id = cf.get("general", "since_id") 
-    # cache the newest tweet for every following guys
-    tweet_cache = {}.fromkeys(names, None)
-    #is this guys newest tweet published ?
-    published = {}.fromkeys(names, True)
+    #arbitrary value...
+    since_id = 12325135 
     #refresh every 'refresh_time' in seconds
     try:
         while True:
@@ -128,43 +168,27 @@ def main():
             while update_counter < update_limit:
                 try:
                     if not published[names[cur_order]]:
+                        update_counter = update_counter + 1
                         publish(tweet_cache[names[cur_order]])
                         published[names[cur_order]] = True
-                        update_counter = update_counter + 1
                     if cur_order == last_order:
                         cur_order = (cur_order + 1) % queue_size
+                        break
                     cur_order = (cur_order + 1) % queue_size
                 except:
+                    cur_order = (cur_order + 1) % queue_size
                     continue
             last_order = (cur_order + queue_size - 1) % queue_size
             time.sleep(refresh_time)
+            load_conf()
+            load_api()
     except KeyboardInterrupt:
         return
-
-#load Consts & APIs & keys
-cf = ConfigParser.ConfigParser()
-cf.read("tw2mbot.conf")
-# read conf & get apis
-rt_chinese = cf.get("general", "rt_chinese")
-#read youdao fanyi api key & keyfrom
-youdao_key = cf.get("youdao", "key")
-youdao_keyfrom = cf.get("youdao", "keyfrom")
-#read limits
-update_limit = string.atoi(cf.get("general", "update_limit"))
-collect_limit = string.atoi(cf.get("general", "collect_limit"))
-#read refresh time in seconds
-refresh_time = string.atof(cf.get("general", "refresh_time"))
-#read followings
-cf.read("followings.list")
-names = cf.options("followings")
-queue_size = len(names)
-followings = {}
-for name in names:
-    followings[name] = cf.get("followings", name)
-
-tweepy_api = get_tweepy_api(cf.get("twitter", "consumer_key"), cf.get("twitter", "consumer_key_secret"), cf.get("twitter", "access_token"), cf.get("twitter", "access_token_secret")) 
-pyqqweibo_api = get_pyqqweibo_api(cf.get("tqq", "consumer_key"), cf.get("tqq", "consumer_key_secret"), cf.get("tqq", "access_token"), cf.get("tqq", "access_token_secret")) 
-sinaweibopy_api = get_sinaweibopy_api(cf.get("tsina", "consumer_key"), cf.get("tsina", "consumer_key_secret"), cf.get("tsina", "access_token"), cf.get("tsina", "access_token_secret")) 
+#globals
+global rt_chinese, update_limit, collect_limit, refresh_time, names, queue_size, followings, tweet_cache, published
+global youdao_key, youdao_keyfrom, tweepy_api, pyqqweibo_api, sinaweibopy_api
+tweet_cache={}
+published={}
 
 if __name__ == '__main__':
     main()
