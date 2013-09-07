@@ -27,5 +27,5 @@ Links
 Contact
 -------
 
-- Author: Vector Guo <vectorguo@gmail.com>
+- Author: Weichao Guo <guoweichao@mail.com>
 
